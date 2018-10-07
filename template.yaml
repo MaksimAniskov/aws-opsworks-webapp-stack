@@ -26,6 +26,8 @@ Resources:
       CustomCookbooksSource:
           Type: archive
           Url: https://s3.amazonaws.com/opsworks-demo-assets/opsworks-linux-demo-cookbooks-nodejs.tar.gz
+      ElasticIps:
+        - Ip: !Ref ElasticIp
   
   WebAppLayer:
     Type: AWS::OpsWorks::Layer
@@ -123,4 +125,5 @@ Resources:
     Type: AWS::EC2::EIP
 
 Outputs:
-  IpAddress: !Ref ElasticIp
+  IpAddress:
+    Value: !Ref ElasticIp
