@@ -1,0 +1,126 @@
+# TODO: Replace sample app with a custom Nodejs application
+# TODO: T2/T3 Unlimited
+# TODO: Load balancing and autoscaling
+# TODO: HTTPS
+# TODO: Data persistance layer
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t3.micro
+
+Resources:
+
+  OpsWorksStack:
+    Type: AWS::OpsWorks::Stack
+    Properties:
+      Name: !Ref AWS::StackName
+      ServiceRoleArn: !GetAtt OpsWorksServiceRole.Arn
+      DefaultInstanceProfileArn: !GetAtt InstanceProfile.Arn
+      ConfigurationManager:
+        Name: Chef
+        Version: 12 # As of September 2018 the default is 11.4
+      DefaultOs: Amazon Linux 2018.03 # As of September 2018 the default is Amazon Linux 2018.03 which does not support Chef 12
+      DefaultRootDeviceType: ebs # The default is instance-store
+      UseCustomCookbooks: true
+      CustomCookbooksSource:
+          Type: archive
+          Url: https://s3.amazonaws.com/opsworks-demo-assets/opsworks-linux-demo-cookbooks-nodejs.tar.gz
+  
+  WebAppLayer:
+    Type: AWS::OpsWorks::Layer
+    Properties:
+      Name: Web Application
+      Shortname: web-app
+      Type: custom
+      CustomRecipes:
+        Deploy:
+          - nodejs_demo
+      CustomSecurityGroupIds:
+        - !GetAtt WebAppSecurityGroup.GroupId
+      AutoAssignPublicIps: no
+      AutoAssignElasticIps: no
+      EnableAutoHealing: yes
+      StackId: !Ref OpsWorksStack
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: 
+      Roles:
+        - !Ref InstanceProfileRole
+
+  InstanceProfileRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+                Service: ec2.amazonaws.com
+
+  OpsWorksServiceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+                Service: opsworks.amazonaws.com
+      Policies:
+        - PolicyName: root
+          PolicyDocument: 
+            Statement: 
+              - Effect: Allow
+                Action:
+                  - ec2:*
+                  - iam:PassRole
+                  - cloudwatch:GetMetricStatistics
+                  - cloudwatch:DescribeAlarms
+                  - ecs:*
+                  - elasticloadbalancing:*
+                  - rds:*
+                Resource: "*"
+
+  WebAppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Web Application
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName} Web Application
+
+  WebApp:
+    Type: AWS::OpsWorks::App
+    Properties: 
+      Name: HelloWorld
+      Type: other # Type nodejs not supported by configuration manager Chef::12
+      StackId: !Ref OpsWorksStack
+      AppSource:
+        Type: git
+        Url: https://github.com/awslabs/opsworks-windows-demo-nodejs.git
+      Environment:
+        - Key: APP_ADMIN_EMAIL
+          Value: admin@example.com
+  
+  Instance:
+    Type: AWS::OpsWorks::Instance
+    Properties: 
+      InstanceType: !Ref InstanceType
+      StackId: !Ref OpsWorksStack
+      LayerIds:
+        - !Ref WebAppLayer
+      ElasticIps:
+        - !Ref ElasticIp
+
+  ElasticIp:
+    Type: AWS::EC2::EIP
+
+Outputs:
+  IpAddress: !Ref ElasticIp
