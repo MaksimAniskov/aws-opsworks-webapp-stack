@@ -1,13 +1,19 @@
-# TODO: Replace sample app with a custom Nodejs application
 # TODO: T2/T3 Unlimited
 # TODO: Load balancing and autoscaling
 # TODO: HTTPS
 # TODO: Data persistance layer
 
 Parameters:
+
   InstanceType:
     Type: String
     Default: t3.micro
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+
+  DefaultSubnetId:
+    Type: AWS::EC2::Subnet::Id
 
 Resources:
 
@@ -25,7 +31,9 @@ Resources:
       UseCustomCookbooks: true
       CustomCookbooksSource:
           Type: archive
-          Url: https://s3.amazonaws.com/opsworks-demo-assets/opsworks-linux-demo-cookbooks-nodejs.tar.gz
+          Url: https://github.com/MaksimAniskov/opsworks_nodejs/blob/master/package/opsworks_nodejs.tar.gz?raw=true
+      VpcId: !Ref VpcId
+      DefaultSubnetId: !Ref DefaultSubnetId
       ElasticIps:
         - Ip: !Ref ElasticIp
   
@@ -36,8 +44,17 @@ Resources:
       Shortname: web-app
       Type: custom
       CustomRecipes:
+        Setup:
+          - opsworks_nodejs::setup
         Deploy:
-          - nodejs_demo
+          - opsworks_nodejs::deploy
+      CustomJson: |
+        {
+            "nodejs": {
+                "version": "8.12.0",
+                "linux_x64_binary_checksum": "3df19b748ee2b6dfe3a03448ebc6186a3a86aeab557018d77a0f7f3314594ef6"
+            }
+        }      
       CustomSecurityGroupIds:
         - !GetAtt WebAppSecurityGroup.GroupId
       AutoAssignPublicIps: no
@@ -94,6 +111,7 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
+      VpcId: !Ref VpcId
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName} Web Application
@@ -106,11 +124,13 @@ Resources:
       StackId: !Ref OpsWorksStack
       AppSource:
         Type: git
-        Url: https://github.com/awslabs/opsworks-windows-demo-nodejs.git
+        Url: https://github.com/MaksimAniskov/aws-opsworks-webapp-stack-sample-app.git
       Environment:
-        - Key: APP_ADMIN_EMAIL
-          Value: admin@example.com
-  
+        - Key: PORT
+          Value: 80
+        - Key: NODE_ENV
+          Value: production
+
   Instance:
     Type: AWS::OpsWorks::Instance
     Properties: 
@@ -123,6 +143,8 @@ Resources:
 
   ElasticIp:
     Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
 
 Outputs:
   IpAddress:
