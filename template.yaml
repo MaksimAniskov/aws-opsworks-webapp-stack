@@ -1,5 +1,6 @@
+# TODO: Autoscaling
+# TODO: Multi-AZ configuration
 # TODO: T2/T3 Unlimited
-# TODO: Load balancing and autoscaling
 # TODO: HTTPS
 # TODO: Data persistance layer
 
@@ -14,6 +15,13 @@ Parameters:
 
   DefaultSubnetId:
     Type: AWS::EC2::Subnet::Id
+
+  SshKeyPair:
+    Type: String
+    Default: ""
+
+Conditions:
+  SshKeyPairDefined: !Not [!Equals [ !Ref SshKeyPair, "" ]]
 
 Resources:
 
@@ -34,8 +42,7 @@ Resources:
           Url: https://github.com/MaksimAniskov/opsworks_nodejs/blob/master/package/opsworks_nodejs.tar.gz?raw=true
       VpcId: !Ref VpcId
       DefaultSubnetId: !Ref DefaultSubnetId
-      ElasticIps:
-        - Ip: !Ref ElasticIp
+      DefaultSshKeyName: !If [SshKeyPairDefined, !Ref SshKeyPair, !Ref "AWS::NoValue"]
   
   WebAppLayer:
     Type: AWS::OpsWorks::Layer
@@ -56,8 +63,8 @@ Resources:
             }
         }      
       CustomSecurityGroupIds:
-        - !GetAtt WebAppSecurityGroup.GroupId
-      AutoAssignPublicIps: no
+        - !Ref WebAppSecurityGroup
+      AutoAssignPublicIps: yes # Required for instance setup
       AutoAssignElasticIps: no
       EnableAutoHealing: yes
       StackId: !Ref OpsWorksStack
@@ -110,11 +117,25 @@ Resources:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          CidrIp: 0.0.0.0/0
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
       VpcId: !Ref VpcId
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName} Web Application
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Web Application
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName} Load Balancer
 
   WebApp:
     Type: AWS::OpsWorks::App
@@ -138,14 +159,36 @@ Resources:
       StackId: !Ref OpsWorksStack
       LayerIds:
         - !Ref WebAppLayer
-      ElasticIps:
-        - !Ref ElasticIp
 
-  ElasticIp:
-    Type: AWS::EC2::EIP
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer # That's a Classic LB. AWS OpsWorks Stacks does not support Application Load Balancer
     Properties:
-      Domain: vpc
+      Scheme: internet-facing
+      Listeners:
+        - Protocol: HTTP
+          LoadBalancerPort: 80
+          InstanceProtocol: HTTP
+          InstancePort: 80
+      Subnets:
+        - !Ref DefaultSubnetId
+      ConnectionDrainingPolicy:
+        Enabled: true
+        Timeout: 60
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      HealthCheck:
+        Target: HTTP:80/
+        Interval: 30
+        Timeout: 3
+        HealthyThreshold: 2
+        UnhealthyThreshold: 2
+
+  LoadBalancerAttachment:
+    Type: AWS::OpsWorks::ElasticLoadBalancerAttachment
+    Properties: 
+      ElasticLoadBalancerName: !Ref LoadBalancer
+      LayerId: !Ref WebAppLayer
 
 Outputs:
-  IpAddress:
-    Value: !Ref ElasticIp
+  DNSName:
+    Value: !GetAtt LoadBalancer.DNSName
