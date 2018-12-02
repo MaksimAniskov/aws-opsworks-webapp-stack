@@ -4,6 +4,10 @@
 
 Parameters:
 
+  AppSource:
+    Type: String
+    Default: https://github.com/MaksimAniskov/aws-opsworks-webapp-stack-sample-app.git
+
   InstanceType:
     Type: String
     Default: t3.micro
@@ -17,6 +21,35 @@ Parameters:
   SshKeyPair:
     Type: String
     Default: ""
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups: 
+      - Label: 
+          default: Node.js application
+        Parameters: 
+          - AppSource
+      - Label: 
+          default: Configuration
+        Parameters: 
+          - VpcId
+          - DefaultSubnetId
+          - InstanceType
+      - Label: 
+          default: Options
+        Parameters: 
+          - SshKeyPair
+    ParameterLabels: 
+      AppSource: 
+        default: Source
+      VpcId:
+        default: VPC Id
+      DefaultSubnetId:
+        default: Subnet Id
+      InstanceType:
+        default: Instance Type
+      SshKeyPair:
+        default: SSH Key Pair Name
 
 Conditions:
   SshKeyPairDefined: !Not [!Equals [ !Ref SshKeyPair, "" ]]
@@ -81,7 +114,7 @@ Resources:
 
   InstanceProfileRole:
     Type: AWS::IAM::Role
-    Properties: 
+    Properties:
       AssumeRolePolicyDocument:
         Statement:
           - Action: sts:AssumeRole
@@ -149,7 +182,7 @@ Resources:
       StackId: !Ref OpsWorksStack
       AppSource:
         Type: git
-        Url: https://github.com/MaksimAniskov/aws-opsworks-webapp-stack-sample-app.git
+        Url: !Ref AppSource
       Environment:
         - Key: PORT
           Value: 80
