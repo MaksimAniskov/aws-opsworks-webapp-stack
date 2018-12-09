@@ -4,9 +4,17 @@
 
 Parameters:
 
-  AppSource:
+  GitHubRepoOwner:
     Type: String
-    Default: https://github.com/MaksimAniskov/aws-opsworks-webapp-stack-sample-app.git
+    Default: MaksimAniskov 
+
+  GitHubRepoName: 
+    Type: String
+    Default: aws-opsworks-webapp-stack-sample-app 
+
+  GitHubRepoBranch:
+    Type: String
+    Default: master 
 
   InstanceType:
     Type: String
@@ -22,13 +30,19 @@ Parameters:
     Type: String
     Default: ""
 
+  EnableCiCd:
+    Type: String
+    Default: no
+
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups: 
       - Label: 
-          default: Node.js application
+          default: Node.js Application GitHub Repository
         Parameters: 
-          - AppSource
+          - GitHubRepoOwner
+          - GitHubRepoName
+          - GitHubRepoBranch
       - Label: 
           default: Configuration
         Parameters: 
@@ -37,11 +51,16 @@ Metadata:
           - InstanceType
       - Label: 
           default: Options
-        Parameters: 
+        Parameters:
+          - EnableCiCd
           - SshKeyPair
     ParameterLabels: 
-      AppSource: 
-        default: Source
+      GitRepoOwner:
+        default: Owner's GitHub user name
+      GitRepoName:
+        default: Repo name
+      GitRepoBranch:
+        default: Branch
       VpcId:
         default: VPC Id
       DefaultSubnetId:
@@ -50,9 +69,19 @@ Metadata:
         default: Instance Type
       SshKeyPair:
         default: SSH Key Pair Name
+      EnableCiCd:
+        default: >
+          Type in 'true' to create a CodePipeline pipeline which will install GitHub hook
+          and automatically deploy new app versions.
+          IMPORTANT! Before to proceed further, go to GitHub to create a Personal Access Token
+          with admin:repo_hook permission.
+          Then create a Secret with name opsworks-cicd-example on SecretsManager,
+          its JSON payload must containg a Secret Key with name GitHubOAuthToken,
+          use the GitHub token as the value.
 
 Conditions:
   SshKeyPairDefined: !Not [!Equals [ !Ref SshKeyPair, "" ]]
+  CreateCiCd: !Equals [ !Ref EnableCiCd, yes ]
 
 Resources:
 
@@ -182,7 +211,7 @@ Resources:
       StackId: !Ref OpsWorksStack
       AppSource:
         Type: git
-        Url: !Ref AppSource
+        Url: !Sub https://github.com/${GitHubRepoOwner}/${GitHubRepoName}.git
       Environment:
         - Key: PORT
           Value: 80
@@ -248,6 +277,102 @@ Resources:
       ElasticLoadBalancerName: !Ref LoadBalancer
       LayerId: !Ref WebAppLayer
 
+  Pipeline:
+    Condition: CreateCiCd
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !GetAtt PipelineRole.Arn
+      RestartExecutionOnUpdate: false
+      ArtifactStore:
+        Type: S3 
+        Location: !Ref PipelineArtifactsBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source 
+              ActionTypeId:
+                Category: Source 
+                Owner: ThirdParty 
+                Provider: GitHub
+                Version: 1 
+              Configuration:
+                  Owner: !Ref GitHubRepoOwner
+                  Repo: !Ref GitHubRepoName
+                  Branch: !Ref GitHubRepoBranch
+                  OAuthToken: '{{resolve:secretsmanager:opsworks-cicd-example:SecretString:GitHubOAuthToken}}'
+              OutputArtifacts:
+                - Name: SourceArtifact
+        - Name: Deploy
+          Actions:
+            - Name: Deploy
+              ActionTypeId:
+                Category: Deploy 
+                Owner: AWS 
+                Provider: OpsWorks
+                Version: 1 
+              Configuration:
+                StackId: !Ref OpsWorksStack
+                LayerId: !Ref WebAppLayer
+                AppId: !Ref WebApp
+                DeploymentType: deploy_app 
+              InputArtifacts:
+                - Name: SourceArtifact
+
+  PipelineArtifactsBucket:
+    Condition: CreateCiCd
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+
+  PipelineRole:
+    Condition: CreateCiCd
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+                Service: codepipeline.amazonaws.com
+      Policies:
+        - PolicyName: S3
+          PolicyDocument: 
+            Statement: 
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "${PipelineArtifactsBucket.Arn}/*"
+        - PolicyName: OpsWorks
+          PolicyDocument: 
+            Statement: 
+              - Effect: Allow
+                Action:
+                  - opsworks:CreateDeployment
+                  - opsworks:UpdateApp
+                  - opsworks:DescribeDeployments
+                  - opsworks:DescribeInstances
+                  - opsworks:DescribeCommands
+                  - opsworks:DescribeApps
+                Resource: !Sub arn:aws:opsworks:${AWS::Region}:${AWS::AccountId}:stack/${OpsWorksStack}/
+
+  InstanceProfileRoleCiCdArtifactsBucketPolicy:
+    Condition: CreateCiCd
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: S3
+      Roles:
+        - !Ref InstanceProfileRole
+      PolicyDocument: 
+        Statement: 
+          - Effect: Allow
+            Action: s3:GetObject
+            Resource: !Sub "${PipelineArtifactsBucket.Arn}/*"
+
 Outputs:
   DNSName:
     Value: !GetAtt LoadBalancer.DNSName
+  CicdArtifactsBucket:
+    Condition: CreateCiCd
+    Value: !Ref PipelineArtifactsBucket
