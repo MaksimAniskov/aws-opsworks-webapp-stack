@@ -1,3 +1,4 @@
+# TODO: Send logs to CloudWatch Logs
 # TODO: Multi-AZ configuration
 # TODO: HTTPS
 # TODO: Data persistance layer
