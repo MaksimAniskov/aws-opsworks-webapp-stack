@@ -72,7 +72,7 @@ Metadata:
         default: SSH Key Pair Name
       EnableCiCd:
         default: >
-          Type in 'true' to create a CodePipeline pipeline which will install GitHub hook
+          IMPORTANT! Available only in us-east-1 region. Type in 'true' to create a CodePipeline pipeline which will install GitHub hook
           and automatically deploy new app versions.
           IMPORTANT! Before to proceed further, go to GitHub to create a Personal Access Token
           with admin:repo_hook permission.
