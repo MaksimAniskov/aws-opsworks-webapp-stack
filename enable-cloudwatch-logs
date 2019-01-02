@@ -1,0 +1,8 @@
+#!/bin/sh
+if [ "$#" -ne 2 ]; then
+  echo "Usage: $0 cloud-formation-stack-name opsworks-layer-id"
+  exit 1
+fi
+CF_STACK_NAME=$1
+LAYER_ID=$2
+aws opsworks update-layer --layer-id $LAYER_ID --cloud-watch-logs-configuration "Enabled=true,LogStreams=[{File=/var/lib/aws/opsworks/chef/*.log,LogGroupName=${CF_STACK_NAME}/web-app/opsworks-command-log}]"
