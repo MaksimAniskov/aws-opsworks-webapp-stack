@@ -1,5 +1,4 @@
 # TODO: Multi-AZ configuration
-# TODO: HTTPS
 # TODO: Data persistance layer
 
 Parameters:
@@ -25,6 +24,9 @@ Parameters:
 
   DefaultSubnetId:
     Type: AWS::EC2::Subnet::Id
+
+  HttpsCertificateDomainName:
+    Type: String
 
   SshKeyPair:
     Type: String
@@ -52,6 +54,7 @@ Metadata:
       - Label: 
           default: Options
         Parameters:
+          - HttpsCertificateDomainName
           - EnableCiCd
           - SshKeyPair
     ParameterLabels: 
@@ -67,6 +70,8 @@ Metadata:
         default: Subnet Id
       InstanceType:
         default: Instance Type
+      HttpsCertificateDomainName:
+        default: Left blank if want HTTP Load Balancer. For HTTPS enter domain name which will be used for issuing AWS ACM SSL certificate
       SshKeyPair:
         default: SSH Key Pair Name
       EnableCiCd:
@@ -80,6 +85,7 @@ Metadata:
           use the GitHub token as the value.
 
 Conditions:
+  SecureHttp: !Not [!Equals [ !Ref HttpsCertificateDomainName, "" ]]
   SshKeyPairDefined: !Not [!Equals [ !Ref SshKeyPair, "" ]]
   CreateCiCd: !Equals [ !Ref EnableCiCd, yes ]
 
@@ -197,8 +203,8 @@ Resources:
       GroupDescription: Web Application
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
+          FromPort: !If [SecureHttp, 443, 80]
+          ToPort: !If [SecureHttp, 443, 80]
           CidrIp: 0.0.0.0/0
       VpcId: !Ref VpcId
       Tags:
@@ -255,8 +261,9 @@ Resources:
     Properties:
       Scheme: internet-facing
       Listeners:
-        - Protocol: HTTP
-          LoadBalancerPort: 80
+        - Protocol: !If [SecureHttp, HTTPS, HTTP]
+          LoadBalancerPort: !If [SecureHttp, 443, 80]
+          SSLCertificateId: !If [SecureHttp, !Ref Certificate, !Ref "AWS::NoValue"]
           InstanceProtocol: HTTP
           InstancePort: 80
       Subnets:
@@ -371,6 +378,13 @@ Resources:
           - Effect: Allow
             Action: s3:GetObject
             Resource: !Sub "${PipelineArtifactsBucket.Arn}/*"
+
+  Certificate:
+    Condition: SecureHttp
+    Type: AWS::CertificateManager::Certificate
+    Properties: 
+      DomainName: !Ref HttpsCertificateDomainName
+      ValidationMethod: DNS
 
 Outputs:
   DNSName:
