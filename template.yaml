@@ -1,4 +1,3 @@
-# TODO: Multi-AZ configuration
 # TODO: Data persistance layer
 
 Parameters:
@@ -22,9 +21,12 @@ Parameters:
   VpcId:
     Type: AWS::EC2::VPC::Id
 
-  DefaultSubnetId:
+  SubnetId1:
     Type: AWS::EC2::Subnet::Id
 
+  SubnetId2:
+    Type: AWS::EC2::Subnet::Id
+  
   HttpsCertificateDomainName:
     Type: String
 
@@ -49,7 +51,8 @@ Metadata:
           default: Configuration
         Parameters: 
           - VpcId
-          - DefaultSubnetId
+          - SubnetId1
+          - SubnetId2
           - InstanceType
       - Label: 
           default: Options
@@ -66,8 +69,10 @@ Metadata:
         default: Branch
       VpcId:
         default: VPC Id
-      DefaultSubnetId:
+      SubnetId1:
         default: Subnet Id
+      SubnetId2:
+        default: For HA setup enter Id of a subnet in another AZ, or copy the above to run it non-HA
       InstanceType:
         default: Instance Type
       HttpsCertificateDomainName:
@@ -86,6 +91,7 @@ Metadata:
 
 Conditions:
   SecureHttp: !Not [!Equals [ !Ref HttpsCertificateDomainName, "" ]]
+  EnableHA: !Not [!Equals [ !Ref SubnetId1, !Ref SubnetId2 ]]
   SshKeyPairDefined: !Not [!Equals [ !Ref SshKeyPair, "" ]]
   CreateCiCd: !Equals [ !Ref EnableCiCd, yes ]
 
@@ -107,7 +113,7 @@ Resources:
           Type: archive
           Url: https://github.com/MaksimAniskov/opsworks_nodejs/blob/master/package/opsworks_nodejs.tar.gz?raw=true
       VpcId: !Ref VpcId
-      DefaultSubnetId: !Ref DefaultSubnetId
+      DefaultSubnetId: !Ref SubnetId1
       DefaultSshKeyName: !If [SshKeyPairDefined, !Ref SshKeyPair, !Ref "AWS::NoValue"]
   
   WebAppLayer:
@@ -234,6 +240,16 @@ Resources:
       LayerIds:
         - !Ref WebAppLayer
 
+  Instance24x7ha:
+    Condition: EnableHA
+    Type: AWS::OpsWorks::Instance
+    Properties:
+      SubnetId: !Ref SubnetId2
+      InstanceType: !Ref InstanceType
+      StackId: !Ref OpsWorksStack
+      LayerIds:
+        - !Ref WebAppLayer
+
   # See https://docs.aws.amazon.com/opsworks/latest/userguide/workinginstances-autoscaling-loadbased.html
   # "Automatic load-based scaling does not create new instances; it starts and stops only those
   # instances that you have created. You must therefore provision enough load-based instances in
@@ -249,7 +265,8 @@ Resources:
 
   InstanceLoadBased2:
     Type: AWS::OpsWorks::Instance
-    Properties: 
+    Properties:
+      SubnetId: !If [ EnableHA, !Ref SubnetId2, !Ref "AWS::NoValue"]
       InstanceType: !Ref InstanceType
       StackId: !Ref OpsWorksStack
       LayerIds:
@@ -267,7 +284,8 @@ Resources:
           InstanceProtocol: HTTP
           InstancePort: 80
       Subnets:
-        - !Ref DefaultSubnetId
+        - !Ref SubnetId1
+        - !If [EnableHA, !Ref SubnetId2, !Ref "AWS::NoValue"]
       ConnectionDrainingPolicy:
         Enabled: true
         Timeout: 60
