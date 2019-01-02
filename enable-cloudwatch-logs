@@ -5,4 +5,4 @@ if [ "$#" -ne 2 ]; then
 fi
 CF_STACK_NAME=$1
 LAYER_ID=$2
-aws opsworks update-layer --layer-id $LAYER_ID --cloud-watch-logs-configuration "Enabled=true,LogStreams=[{File=/var/lib/aws/opsworks/chef/*.log,LogGroupName=${CF_STACK_NAME}/web-app/opsworks-command-log}]"
+aws opsworks update-layer --layer-id $LAYER_ID --cloud-watch-logs-configuration "Enabled=true,LogStreams=[{File=/var/lib/aws/opsworks/chef/*.log,LogGroupName=${CF_STACK_NAME}/web-app/opsworks-command-log},{File=/var/log/opsworks-app.*.log,LogGroupName=${CF_STACK_NAME}/web-app/app-log}]"
